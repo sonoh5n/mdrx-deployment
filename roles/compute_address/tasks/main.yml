@@ -1,0 +1,9 @@
+---
+- name: create a common external IP address
+  google.cloud.gcp_compute_address:
+    name: mdrx-common
+    project: '{{ project_id }}'
+    region: '{{ cluster.location }}'
+    auth_kind: application
+    state: present
+  register: compute_address

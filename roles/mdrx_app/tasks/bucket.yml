@@ -1,0 +1,52 @@
+---
+- google.cloud.gcp_storage_bucket:
+    name: '{{ crate_bucket_name }}'
+    location: '{{ location }}'
+    project: '{{ project_id }}'
+    storage_class: '{{ storage_class|default("STANDARD") }}'
+    auth_kind: application
+    state: present
+  register: crate_bucket
+
+- name: crate bucket uniform ACL
+  command:
+    argv:
+      - gsutil
+      - bucketpolicyonly
+      - set
+      - 'on'  # a string, so it doesn't become `True`
+      - 'gs://{{ crate_bucket.name }}'
+
+  # We'd like to be able to use `google.cloud.gcp_storage_bucket_access_control
+  # <https://docs.ansible.com/ansible/latest/collections/google/cloud/gcp_storage_bucket_access_control_module.html>`_,
+  # but it uses the `BucketAccessControls API <https://cloud.google.com/storage/docs/json_api/v1/bucketAccessControls>`_
+  # which doesn't work when buckets have uniform bucket-level access. Instead, we'll call gsutil directly to set
+  # permissions.
+  #
+  # Instead, we create a temporary file, put the JSON ACL bindings in it, and call `gsutil iam set`. Once that's done,
+  # we explicitly remove the temporary file
+
+- name: create ACL file
+  tempfile:
+  register: bucket_iam_policy_file
+
+- name: write ACL file
+  template:
+    src: 'templates/bucket-iam-policy.json'
+    dest: '{{ bucket_iam_policy_file.path }}'
+
+- name: crate bucket ACL
+  command:
+    argv:
+      - gsutil
+      - iam
+      - set
+      - '{{ bucket_iam_policy_file.path }}'
+      - 'gs://{{ crate_bucket.name }}'
+
+- name: Remove the ACL file
+  file:
+    path: "{{ bucket_iam_policy_file.path }}"
+    state: absent
+  when: bucket_iam_policy_file.path is defined
+

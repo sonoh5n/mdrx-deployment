@@ -1,0 +1,24 @@
+---
+cluster:
+  name: mdrx
+  location: asia-northeast1
+  initial_node_count: 1  # This is the number of nodes per zone, and there are three zones
+
+storage:
+  location: asia
+
+instance_secret_name: instance-secret
+
+# https://github.com/kubernetes/ingress-nginx/blob/master/charts/ingress-nginx/values.yaml#L71
+ingress_class: nginx
+
+cluster_issuer: letsencrypt-prod
+
+helm_repositories:
+  bitnami: "https://charts.bitnami.com/bitnami"
+  gitlab: "https://charts.gitlab.io/"
+  ingress-nginx: "https://kubernetes.github.io/ingress-nginx"
+  jetstack: "https://charts.jetstack.io"
+  prometheus-community: "https://prometheus-community.github.io/helm-charts"
+
+google_application_credentials: './.google-application-credentials/{{ inventory_hostname }}.json'

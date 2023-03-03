@@ -1,0 +1,137 @@
+---
+- set_fact:
+    instance_ingress_class: 'nginx-instance-{{ instance.id }}'
+  tags:
+    - instances
+    - gitlab
+    - app
+
+- name: create an instance namespace
+  community.kubernetes.k8s:
+    kind: Namespace
+    api_version: v1
+    state: present
+    name: '{{ namespace_name }}'
+  tags:
+    - instances
+    - gitlab
+    - app
+    - secret
+
+
+- name: create an instance IP address
+  google.cloud.gcp_compute_address:
+    name: "mdrx-instance-{{ instance.id }}"
+    project: '{{ project_id }}'
+    region: '{{ cluster.location }}'
+    auth_kind: application
+    state: present
+  register: instance_address
+  tags:
+    - dns
+    - instances
+    - gitlab
+    - app
+
+- name: manage instance secret
+  # This fetches any existing secret so that generated values can be preserved across plays.
+  # As a result, we don't have to explicitly set any instance-internal passwords, as they're
+  # created on first deployment. If we extend the secret with new keys, only the new values
+  # will be generated.
+  tags:
+    - instances
+    - gitlab
+    - app
+    - secret
+    - oauth_application
+  block:
+  - name: fetch existing instance secret
+    community.kubernetes.k8s_info:
+      api_version: v1
+      kind: Secret
+      name: '{{ instance_secret_name }}'
+      namespace: '{{ namespace_name }}'
+    register: existing_instance_secret_info
+
+  - name: instance secret facts (1/2)
+    set_fact:
+      existing_instance_secret: "{{ existing_instance_secret_info.resources.0.data|default({}) }}"
+
+  - name: instance secret facts (2/2)
+    set_fact:
+      social_auth_gitlab_key: "{{ existing_instance_secret.get('social-auth-gitlab-key', '')|b64decode|default(lookup('password', '/dev/null length=64 chars=ascii_lowercase,digits'), true) }}"
+      social_auth_gitlab_secret: "{{ existing_instance_secret.get('social-auth-gitlab-secret', '')|b64decode|default(lookup('password', '/dev/null length=64 chars=ascii_lowercase,digits'), true) }}"
+
+  - name: instance secret
+    community.kubernetes.k8s:
+      state: present
+      definition: "{{ lookup('template', 'templates/secret.yml')|from_yaml }}"
+
+- name: Deploy GitLab
+  import_role:
+    name: gitlab
+  tags:
+    - instances
+    - gitlab
+#    - dns
+
+- name: Deploy MDR-X
+  import_role:
+    name: mdrx_app
+  tags:
+    - instances
+    - app
+#    - dns
+
+- name: ensure OAuth application
+  tags:
+    - instances
+    - oauth_application
+  environment:
+    SOCIAL_AUTH_GITLAB_KEY: '{{ social_auth_gitlab_key }}'
+    SOCIAL_AUTH_GITLAB_SECRET: '{{ social_auth_gitlab_secret }}'
+  # Retry this because on the first run we have to wait for the GitLab PostgreSQL instance to come up.
+  retries: 5
+  delay: 10
+  register: result
+  until: result.rc == 0
+  shell:
+    cmd: |
+      /usr/bin/kubectl exec deploy/gitlab-task-runner -i \
+        --pod-running-timeout=10m \
+        --namespace={{ namespace_name }} \
+        -- \
+      env \
+        -C /srv/gitlab \
+        "SOCIAL_AUTH_GITLAB_KEY=${SOCIAL_AUTH_GITLAB_KEY}" \
+        "SOCIAL_AUTH_GITLAB_SECRET=${SOCIAL_AUTH_GITLAB_SECRET}" \
+      bundle exec rails console -e production <<EOF
+      app = Doorkeeper::Application.by_uid ENV['SOCIAL_AUTH_GITLAB_KEY']
+      if app.nil?
+          app = Doorkeeper::Application.new uid: ENV['SOCIAL_AUTH_GITLAB_KEY']
+      end
+      app.name = 'MDR-X'
+      app.confidential = true
+      app.trusted = true
+      app.owner = User.find_by_username 'root'
+      app.redirect_uri = 'https://{{ instance_domain }}/complete/gitlab/'
+      app.scopes = 'read_user api read_repository profile'
+      app.secret = ENV['SOCIAL_AUTH_GITLAB_SECRET']
+      app.save!
+      EOF
+
+
+- name: install ingress-nginx chart
+  community.kubernetes.helm:
+    release_name: 'ingress-nginx-instance-{{ instance.id }}'
+    chart_ref: ingress-nginx/ingress-nginx
+    release_namespace: '{{ namespace_name }}'
+    values:
+      controller:
+        ingressClass: '{{ instance_ingress_class }}'
+        service:
+          loadBalancerIP: '{{ instance_address.address }}'
+      # https://docs.gitlab.com/charts/advanced/external-nginx/index.html#helm-deployment
+      # See alto the gitlab-nginx-instance-tcp ConfigMap the GitLab helm chart creates
+      tcp:
+        22: "{{ namespace_name }}/gitlab-gitlab-shell:22"

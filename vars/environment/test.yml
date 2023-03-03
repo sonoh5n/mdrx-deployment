@@ -1,0 +1,11 @@
+project_id: lyrical-flame-302810
+project_number: 223578152219
+zone:
+  dns_name: mdrx-test.cottagelabs.com
+  google_site_verification: google-site-verification=cNYJ5vU4HEeqVFou5ouxmlENrtefLRyv-wUQOKmnDGc
+
+instances:
+#  - id: leda
+#    name: Leda
+  - id: kore
+    name: Kore

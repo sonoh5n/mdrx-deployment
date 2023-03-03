@@ -1,0 +1,40 @@
+---
+- name: create DNS record for Prometheus
+  google.cloud.gcp_dns_resource_record_set:
+    name: 'prometheus.{{ zone.dns_name }}.'
+    managed_zone: "{{ managed_zone }}"
+    type: A
+    ttl: 600
+    target:
+    - "{{ compute_address.address }}"
+    project: '{{ project_id }}'
+    auth_kind: application
+    state: present
+
+- name: create a namespace for prometheus
+  community.kubernetes.k8s:
+    kind: Namespace
+    api_version: v1
+    state: present
+    name: 'prometheus'
+
+- name: Install prometheus
+  community.kubernetes.helm:
+    release_name: prometheus
+    chart_ref: prometheus-community/prometheus
+    release_namespace: prometheus
+    values:
+      server:
+        ingress:
+          enabled: true
+          annotations:
+            kubernetes.io/ingress.class: '{{ ingress_class }}'
+            kubernetes.io/ingress.provider: nginx
+            cert-manager.io/cluster-issuer: '{{ cluster_issuer }}'
+          hosts:
+            - 'prometheus.{{ zone.dns_name }}'
+          tls:
+            - secretName: prometheus-server-tls
+              hosts:
+                - 'prometheus.{{ zone.dns_name }}'
+

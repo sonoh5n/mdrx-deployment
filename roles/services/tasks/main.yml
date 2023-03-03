@@ -1,0 +1,14 @@
+---
+- name: enable all the GCP APIs we use
+  google.cloud.gcp_serviceusage_service:
+    name: '{{ item }}'
+    project: '{{ project_id }}'
+    auth_kind: application
+    state: present
+  loop:
+#    - cloudapis.googleapis.com
+    - compute.googleapis.com
+    - container.googleapis.com
+    - dns.googleapis.com
+    - storage.googleapis.com
+    - serviceusage.googleapis.com

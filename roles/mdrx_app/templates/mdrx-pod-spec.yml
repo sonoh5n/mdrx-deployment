@@ -1,0 +1,104 @@
+{% set build_path %}/var/run/mdrx-build{% endset %}
+securityContext:
+  runAsUser: 1001
+  runAsGroup: 3000
+  fsGroup: 2000
+  allowPrivilegeEscalation: false
+automountServiceAccountToken: false
+containers:
+  - name: '{{ name }}'
+    image: 'gcr.io/{{ project_id }}/mdrx:master'
+    imagePullPolicy: Always
+    command: {{ command|to_yaml }}
+    args: {{ args|to_yaml }}
+
+    env:
+      - name: SECRET_KEY
+        valueFrom:
+          secretKeyRef:
+            name: '{{ instance_secret_name }}'
+            key: secret-key
+      - name: FLASK_APP
+        value: 'mdrx.app:create_app()'
+
+      # GitLab / OAuth
+      - name: SOCIAL_AUTH_GITLAB_API_URL
+        value: 'https://gitlab.{{ instance_domain }}'
+      - name: SOCIAL_AUTH_GITLAB_AUTHORIZATION_URL
+        value: '$(SOCIAL_AUTH_GITLAB_API_URL)/oauth/authorize'
+      - name: SOCIAL_AUTH_GITLAB_ACCESS_TOKEN_URL
+        value: '$(SOCIAL_AUTH_GITLAB_API_URL)/oauth/token'
+      - name: SOCIAL_AUTH_GITLAB_KEY
+        valueFrom:
+          secretKeyRef:
+            name: '{{ instance_secret_name }}'
+            key: social-auth-gitlab-key
+      - name: SOCIAL_AUTH_GITLAB_SECRET
+        valueFrom:
+          secretKeyRef:
+            name: '{{ instance_secret_name }}'
+            key: social-auth-gitlab-secret
+
+      # Database
+      - name: POSTGRES_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: '{{ instance_secret_name }}'
+            key: postgresql-password
+      - name: DATABASE_URL
+        value: postgres://postgres:$(POSTGRES_PASSWORD)@mdrx-postgresql.{{ namespace_name }}.svc.cluster.local/mdrx
+
+      # Redis password
+      - name: REDIS_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: '{{ instance_secret_name }}'
+            key: redis-password
+
+      # Celery broker
+      - name: CELERY_BROKER_URL
+        value: redis://:$(REDIS_PASSWORD)@mdrx-redis-master.{{ namespace_name }}.svc.cluster.local/0
+      - name: CELERY_RESULT_BACKEND
+        value: redis://:$(REDIS_PASSWORD)@mdrx-redis-master.{{ namespace_name }}.svc.cluster.local/1
+
+
+{% if build_volume|default(false) %}
+      - name: BUILD_PATH
+        value: '{{ build_path }}'
+{% endif %}
+
+      - name: CRATE_GCS_BUCKET_NAME
+        value: '{{ crate_bucket_name }}'
+
+{% if google_credentials_secret_name|default(false) %}
+      # Google service account credentials
+      - name: GOOGLE_APPLICATION_CREDENTIALS
+        value: '/var/run/secrets/service-account.mdrx/google-credentials.json'
+{% endif %}
+
+{% if google_credentials_secret_name|default(false) or build_volume|default(false) %}
+    volumeMounts:
+{% if google_credentials_secret_name|default(false)  %}
+      - name: google-credentials-secret
+        mountPath: '/var/run/secrets/service-account.mdrx'
+        readOnly: true
+{% endif %}
+{% if build_volume|default(false) %}
+      - name: build-volume
+        mountPath: '{{ build_path }}'
+{% endif %}
+{% endif %}
+
+{% if ports|default(false) %}
+    ports:
+      - containerPort: 5000
+        name: http
+        protocol: TCP
+{% endif %}
+
+{% if google_credentials_secret_name|default(false) %}
+volumes:
+  - name: google-credentials-secret
+    secret:
+      secretName: '{{ google_credentials_secret_name }}'
+{% endif %}

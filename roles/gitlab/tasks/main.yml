@@ -1,0 +1,79 @@
+---
+- name: create DNS records
+  google.cloud.gcp_dns_resource_record_set:
+    name: '{{ item }}'
+    managed_zone: "{{ managed_zone }}"
+    type: A
+    ttl: 600
+    target:
+      - "{{ instance_address.address }}"
+    project: '{{ project_id }}'
+    auth_kind: application
+    state: present
+  tags:
+    - dns
+  loop:
+    - 'gitlab.{{ instance_domain }}.'
+    - 'registry.{{ instance_domain }}.'
+    - 'minio.{{ instance_domain }}.'
+
+- name: gitlab
+  community.kubernetes.helm:
+    release_name: gitlab
+    chart_ref: gitlab/gitlab
+    release_namespace: '{{ namespace_name }}'
+    # Values reference at https://gitlab.com/gitlab-org/charts/gitlab/-/blob/master/values.yaml
+    release_values:
+      nginx-ingress:
+        enabled: false
+      certmanager:
+        install: false
+      global:
+        hosts:
+          domain: '{{ instance_domain }}'
+          https: false
+          gitlab:
+            name: 'gitlab.{{ instance_domain }}'
+            https: false
+        ingress:
+          configureCertmanager: false
+          class: '{{ instance_ingress_class }}'
+          tls:
+            enabled: true
+            secretName: 'gitlab-wildcard-tls-{{ cluster_issuer }}'
+          annotations:
+            cert-manager.io/cluster-issuer: '{{ cluster_issuer }}'
+            # https://github.com/jetstack/cert-manager/issues/2538
+            acme.cert-manager.io/http01-ingress-class: '{{ instance_ingress_class }}'
+        # https://docs.gitlab.com/charts/charts/globals.html#outgoing-email
+        email:
+          display_name: "MDR-X GitLab {{ instance.name }}"
+          from: 'gitlab@gitlab.{{ instance_domain }}'
+          reply_to: 'noreply@gitlab.{{ instance_domain }}'
+        smtp:
+          enabled: '{{ smtp_enabled|default(false) }}'
+          address: '{{ smtp_host|default("") }}'
+          port: '{{ smtp_port|default(465) }}'
+          starttls_auto: '{{ smtp_starttls|default(false) }}'
+          tls: '{{ smtp_tls|default(true) }}'
+          authentication: '{{ smtp_authentication|default("plain") }}'
+          user_name: '{{ smtp_username|default("") }}'
+          password:
+            secret: '{{ instance_secret_name }}'
+            key: smtp-password
+
+      prometheus:
+        install: false
+      gitlab:
+        webservice:
+          ingress:
+            tls:
+              secretName: 'gitlab-webservice-tls-{{ cluster_issuer }}'
+      registry:
+        ingress:
+          tls:
+            secretName: 'gitlab-registry-tls-{{ cluster_issuer }}'
+      minio:
+        ingress:
+          tls:
+            secretName: 'gitlab-minio-tls-{{ cluster_issuer }}'

@@ -1,0 +1,24 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: mdrx-web
+  namespace: '{{ namespace_name }}'
+  annotations:
+    kubernetes.io/ingress.class: '{{ instance_ingress_class }}'
+    # https://github.com/jetstack/cert-manager/issues/2538
+    acme.cert-manager.io/http01-ingress-class: '{{ instance_ingress_class }}'
+    kubernetes.io/ingress.provider: nginx
+    cert-manager.io/cluster-issuer: '{{ cluster_issuer }}'
+spec:
+  rules:
+    - host: '{{ instance_domain }}'
+      http:
+        paths:
+          - backend:
+              serviceName: mdrx-web
+              servicePort: 5000
+            path: /
+  tls:
+    - hosts:
+        - '{{ instance_domain }}'
+      secretName: mdrx-tls-{{ cluster_issuer }}

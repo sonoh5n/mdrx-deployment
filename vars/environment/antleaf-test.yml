@@ -1,0 +1,10 @@
+project_id: mdr-x-73410
+project_number: 1046183203202
+zone:
+  dns_name: antleaf-mdrx-test.cottagelabs.com
+  google_site_verification: google-site-verification=cNYJ5vU4HEeqVFou5ouxmlENrtefLRyv-wUQOKmnDGc
+
+instances:
+  - id: kore
+    name: Kore
+    crate_bucket_name: antleaf-test-mdrx-kore-crate

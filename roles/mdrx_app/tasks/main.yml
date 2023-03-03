@@ -1,0 +1,131 @@
+---
+- name: redis
+  community.kubernetes.helm:
+    release_name: mdrx-redis
+    chart_ref: bitnami/redis
+    release_namespace: '{{ namespace_name }}'
+    release_values:
+      existingSecret: '{{ instance_secret_name }}'
+      existingSecretPasswordKey: 'redis-password'
+
+- name: postgresql
+  community.kubernetes.helm:
+    release_name: mdrx-postgresql
+    chart_ref: bitnami/postgresql
+    release_namespace: '{{ namespace_name }}'
+    release_values:
+      existingSecret: '{{ instance_secret_name }}'
+      postgresqlDatabase: mdrx
+
+- name: create bucket and service account names
+  set_fact:
+    crate_bucket_name: '{{ instance.crate_bucket_name|default("crates." + instance.id + ".instance." + zone.dns_name) }}'
+    web_service_account_name: 'sa-mdrx-web-{{ instance.id }}@{{ project_id }}.iam.gserviceaccount.com'
+    worker_service_account_name: 'sa-mdrx-worker-{{ instance.id }}@{{ project_id }}.iam.gserviceaccount.com'
+
+- name: ensure service accounts and keys
+  include_tasks: service_account.yml
+  loop:
+    - secret_name: 'mdrx-web-service-account'
+      service_account_name: '{{ web_service_account_name }}'
+    - secret_name: 'mdrx-worker-service-account'
+      service_account_name: '{{ worker_service_account_name }}'
+
+
+# Google Cloud Storage bucket for the generated RO-Crates
+
+- include_tasks: bucket.yml
+  vars:
+    bucket_name: '{{ crate_bucket_name }}'
+    location: '{{ storage.location }}'
+#    storage_class: REGIONAL
+    acl_bindings:
+      - role: roles/storage.objectViewer
+        members:
+          - 'serviceAccount:{{ web_service_account_name }}'
+      - role: roles/storage.objectAdmin
+        members:
+          - 'serviceAccount:{{ worker_service_account_name }}'
+      # These two are defaults, but without them the project editor can't later manage the bucket IAM policy
+      - role: roles/storage.legacyBucketOwner
+        members:
+          - projectEditor:mdr-x-73410
+          - projectOwner:mdr-x-73410
+      - role: roles/storage.legacyBucketReader
+        members:
+          - projectViewer:mdr-x-73410
+
+
+# Deploy the application
+
+- name: mdrx-web deployment
+  community.kubernetes.k8s:
+    state: present
+    definition: "{{ lookup('template', 'templates/mdrx-deployment.yml')|from_yaml }}"
+  vars:
+    command: ['gunicorn']
+    args:
+      - 'mdrx.app:create_proxy_app()'
+      - '-b'
+      - '0.0.0.0:5000'
+    name: mdrx-web
+    ports: yes
+    replicas: 1
+    google_credentials_secret_name: 'mdrx-web-service-account'
+
+# We loop over the absent, present states to ensure that any old job is no longer there
+# before starting a new one, as we can't patch an existing Job.
+- name: mdrx migrations
+  community.kubernetes.k8s:
+    state: '{{ state }}'
+    definition: "{{ lookup('template', 'templates/mdrx-job.yml')|from_yaml }}"
+  vars:
+    command: ['flask']
+    args:
+      - db
+      - upgrade
+    name: mdrx-migrations
+  loop: ['absent', 'present']
+  loop_control:
+    loop_var: state
+
+
+- name: mdrx-worker deployment
+  community.kubernetes.k8s:
+    state: present
+    definition: "{{ lookup('template', 'templates/mdrx-statefulset.yml')|from_yaml }}"
+  vars:
+    command: ['celery', '-A', 'mdrx']
+    args: ['worker', '-B', '-s', '/run/mdrx/celerybeat-schedule']
+    name: mdrx-worker
+    ports: no
+    build_volume: yes
+    replicas: 1
+    google_credentials_secret_name: 'mdrx-worker-service-account'
+
+
+- name: mdrx-service
+  community.kubernetes.k8s:
+    state: present
+    definition: "{{ lookup('template', 'templates/mdrx-service.yml')|from_yaml }}"
+
+
+- name: mdrx ingress
+  community.kubernetes.k8s:
+    state: present
+    definition: "{{ lookup('template', 'templates/mdrx-ingress.yml')|from_yaml }}"
+
+
+- name: create DNS record
+  google.cloud.gcp_dns_resource_record_set:
+    name: '{{ instance_domain }}.'
+    managed_zone: "{{ managed_zone }}"
+    type: A
+    ttl: 600
+    target:
+    - "{{ instance_address.address }}"
+    project: '{{ project_id }}'
+    auth_kind: application
+    state: present
+  tags:
+    - dns

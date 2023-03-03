@@ -1,0 +1,15 @@
+project_id: nims-mdr-x
+project_number: 117069061369
+zone:
+  dns_name: nims-mdrx-test.cottagelabs.com
+  google_site_verification: google-site-verification=CbNXiXErWNOS1uc31MIarA4u8vy3C7Y9cV2j_4YSzMs
+smtp_host: smtp.example.com
+smtp_username: example
+# SMTP password is in vaults/common.yml
+
+
+instances:
+#  - id: leda
+#    name: Leda
+  - id: kore
+    name: Kore

@@ -1,0 +1,6 @@
+---
+- name: Add helm chart
+  community.kubernetes.helm_repository:
+    name: '{{ item.key }}'
+    repo_url: '{{ item.value }}'
+  loop: '{{ helm_repositories|dict2items }}'

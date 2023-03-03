@@ -1,0 +1,35 @@
+---
+- hosts: all
+  connection: local
+  gather_facts: no
+
+  roles:
+    - role: services
+      tags: services
+    - role: dns
+      tags: dns
+    - role: ingress_controller
+      tags: ingress_controller
+    - role: prometheus
+      tags: prometheus
+
+  tasks:
+    - name: Deploy instances
+      include_role:
+        name: mdrx_instance
+      loop: '{{ instances }}'
+      loop_control:
+        loop_var: instance
+      tags:
+      - instances
+      - gitlab
+      - app
+      - secret
+      - oauth_application
+      - dns
+
+  vars_files:
+    - vaults/main.yml
+    - 'vaults/environment/{{ environment }}.yml'
+    - vars/main.yml
+    - 'vars/environment/{{ environment }}.yml'

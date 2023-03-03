@@ -1,0 +1,31 @@
+---
+- name: create the cluster
+  google.cloud.gcp_container_cluster:
+    auth_kind: application
+    project: '{{ project_id }}'
+    location: '{{ cluster.location }}'
+    name: '{{ cluster.name }}'
+    initial_node_count: '{{ cluster.initial_node_count }}'  # we'll do this with the node pool next
+    node_config:
+      machine_type: e2-standard-4
+  register: gcp_container_cluster
+
+- name: get credentials
+  command:
+    cmd: 'gcloud container clusters get-credentials {{ cluster.name }} --region {{ cluster.location }} --project={{ project_id }}'
+
+- name: create a node pool
+  google.cloud.gcp_container_node_pool:
+    name: default-pool
+    initial_node_count: '{{ cluster.initial_node_count }}'
+    cluster: "{{ gcp_container_cluster }}"
+    location: '{{ cluster.location }}'
+    project: '{{ project_id }}'
+    auth_kind: application
+    state: present
+    config:
+      machine_type: e2-standard-4
+      oauth_scopes:
+      - https://www.googleapis.com/auth/compute
+      - https://www.googleapis.com/auth/devstorage.read_only
+

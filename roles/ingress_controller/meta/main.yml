@@ -1,0 +1,5 @@
+---
+dependencies:
+  - role: dns
+  - role: cluster
+  - role: helm

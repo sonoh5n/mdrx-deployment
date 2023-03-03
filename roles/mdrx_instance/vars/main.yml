@@ -1,0 +1,2 @@
+namespace_name: 'instance-{{ instance.id }}'
+instance_domain: '{{ instance.id}}.{{ zone.dns_name }}'

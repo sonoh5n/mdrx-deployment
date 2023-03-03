@@ -1,0 +1,3 @@
+{
+  "bindings": {{ acl_bindings|to_nice_json(indent=4) }}
+}

@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: '{{ name }}'
+  namespace: '{{ namespace_name }}'
+  labels:
+    app: '{{ name }}'
+    instance: '{{ instance.id }}'
+spec:
+  replicas: {{ replicas }}
+  selector:
+    matchLabels:
+      app: '{{ name }}'
+      instance: '{{ instance.id }}'
+  template:
+    metadata:
+      name: '{{ name }}'
+      labels:
+        app: '{{ name }}'
+        instance: '{{ instance.id }}'
+
+    spec:
+{% set pod_spec %}{% include "templates/mdrx-pod-spec.yml" with context %}{% endset %}
+      {{ pod_spec|indent(6) }}
+
+{% if build_volume|default(false) %}
+  volumeClaimTemplates:
+    - metadata:
+        name: build-volume
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: standard
+        resources:
+          requests:
+            storage: 20Gi
+{% endif %}

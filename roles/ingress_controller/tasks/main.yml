@@ -1,0 +1,88 @@
+# Common ingress controller
+
+- name: install ingress-nginx chart
+  community.kubernetes.helm:
+    release_name: ingress-nginx
+    chart_ref: ingress-nginx/ingress-nginx
+    release_namespace: default
+    values:
+      controller:
+        service:
+          loadBalancerIP: '{{ compute_address.address }}'
+
+# Cert manager
+
+- name: create an namespace for cert-manager
+  community.kubernetes.k8s:
+    kind: Namespace
+    api_version: v1
+    state: present
+    name: 'cert-manager'
+
+- name: install cert-manager chart
+  community.kubernetes.helm:
+    release_name: cert-manager
+    chart_ref: jetstack/cert-manager
+    release_namespace: cert-manager
+    values:
+      installCRDs: true
+
+- name: Wait for cert-manager-webhook to become available
+  command:
+    cmd: |
+      /usr/bin/kubectl wait
+        --namespace=cert-manager
+        --for=condition=Ready
+        pods
+        --selector=app.kubernetes.io/instance=cert-manager
+        --timeout=600s
+  retries: 4
+  delay: 10
+  register: result
+  until: result.rc == 0
+
+- name: cert-manager staging ClusterIssuer
+  community.kubernetes.k8s:
+    definition:
+      apiVersion: cert-manager.io/v1
+      kind: ClusterIssuer
+      metadata:
+        name: letsencrypt-staging
+      spec:
+        acme:
+          # You must replace this email address with your own.
+          # Let's Encrypt will use this to contact you about expiring
+          # certificates, and issues related to your account.
+          email: alex@cottagelabs.com
+          server: https://acme-staging-v02.api.letsencrypt.org/directory
+          privateKeySecretRef:
+            # Secret resource that will be used to store the account's private key.
+            name: staging-issuer-account-key
+          # Add a single challenge solver, HTTP01 using nginx
+          solvers:
+          - http01:
+              ingress:
+                class: nginx
+
+- name: cert-manager prod ClusterIssuer
+  community.kubernetes.k8s:
+    definition:
+      apiVersion: cert-manager.io/v1
+      kind: ClusterIssuer
+      metadata:
+        name: letsencrypt-prod
+      spec:
+        acme:
+          # You must replace this email address with your own.
+          # Let's Encrypt will use this to contact you about expiring
+          # certificates, and issues related to your account.
+          email: alex@cottagelabs.com
+          server: https://acme-v02.api.letsencrypt.org/directory
+          privateKeySecretRef:
+            # Secret resource that will be used to store the account's private key.
+            name: prod-issuer-account-key
+          # Add a single challenge solver, HTTP01 using nginx
+          solvers:
+          - http01:
+              ingress:
+                class: nginx

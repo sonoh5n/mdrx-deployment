@@ -1,0 +1,14 @@
+all:
+  vars:
+    mdrx_git_url: 'https://github.com/antleaf/mdr-x-development.git'
+    ansible_python_interpreter: /usr/bin/python3
+
+  hosts:
+    gcp-test:
+      environment: test
+
+    nims-mdr-x:
+      environment: nims-test
+
+    antleaf-test:
+      environment: antleaf-test

@@ -1,0 +1,21 @@
+- name: create managed zone
+  google.cloud.gcp_dns_managed_zone:
+    name: '{{ zone.dns_name.replace(".", "-") }}'
+    description: '{{ zone.dns_name }}'
+    auth_kind: application
+    dns_name: '{{ zone.dns_name }}.'
+    project: '{{ project_id }}'
+    state: present
+  register: managed_zone
+
+- name: domain verification
+  google.cloud.gcp_dns_resource_record_set:
+    name: '{{ zone.dns_name }}.'
+    managed_zone: "{{ managed_zone }}"
+    type: TXT
+    ttl: 600
+    target:
+    - "{{ zone.google_site_verification }}"
+    project: '{{ project_id }}'
+    auth_kind: application
+    state: present
